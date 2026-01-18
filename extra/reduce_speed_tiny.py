@@ -5,7 +5,6 @@ import time
 if __name__ == "__main__":
     a = Tensor(np_array:=np.random.default_rng().random((4096, 4096), dtype=np.float32)).realize()
     
-    # warmup
     for _ in range(10):
         a.sum().realize()
         

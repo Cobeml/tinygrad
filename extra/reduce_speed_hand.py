@@ -110,15 +110,12 @@ void reduce(float* restrict data0, float* restrict data1) {
 if __name__ == "__main__":
   a = Tensor(np_array:=(np.random.default_rng().random((4096, 4096), dtype=np.float32)-0.5), device="CPU").realize()
   with Context(SPLIT_REDUCEOP=0):
-    # TODO: make it easy to alter the OptOps for a ScheduleItem
     GlobalCounters.reset()
     out = a.sum()
     sis = out.schedule()
-    # lower the schedule first
     for ei in sis:
       ei.lower()
 
-    # warm up the cpu
     for _ in range(10):
       for i,ei in enumerate(sis):
         if i == 0:
@@ -130,7 +127,7 @@ if __name__ == "__main__":
           #prg._prg = CPUProgram(prg_spec.name, arm_bytecode)
           # print("buffer at:",hex(ei.bufs[1]._buf.va_addr))
           ei = replace(ei, prg=prg)
-          sis[i] = ei # Update the list with the patched item
+          sis[i] = ei 
         ei.run()
 
     GlobalCounters.reset()
