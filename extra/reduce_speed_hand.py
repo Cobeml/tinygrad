@@ -127,7 +127,7 @@ if __name__ == "__main__":
           #prg._prg = CPUProgram(prg_spec.name, arm_bytecode)
           # print("buffer at:",hex(ei.bufs[1]._buf.va_addr))
           ei = replace(ei, prg=prg)
-          sis[i] = ei 
+          sis[i] = ei
         ei.run()
 
     GlobalCounters.reset()
