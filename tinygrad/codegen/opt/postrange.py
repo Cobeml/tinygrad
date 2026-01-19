@@ -130,7 +130,7 @@ class Scheduler:
       self.dont_use_locals = True
       return
 
-    if opt.op in {OptOps.LOCAL, OptOps.GROUP, OptOps.GROUPTOP}:
+    if opt.op is OptOps.LOCAL:
       check(self.ren.has_local, "locals needed for opt")
 
     rng = self.rngs[real_axis] if (real_axis:=self.real_axis(opt.op, opt.axis)) >= 0 else UOp(Ops.NOOP)
@@ -144,8 +144,8 @@ class Scheduler:
     if opt.op in opt_to_at:
       amt:int = int(rng.vmax+1) if opt.arg == 0 else cast(int, opt.arg)
 
-      # copied from kernel.py. prevents METAL compiler hangs
-      if self.reduceop is not None and (opt.op in {OptOps.GROUP, OptOps.GROUPTOP} or \
+      # copied from kernel.py. prevents METAL compiler hangs (only check when has_local)
+      if self.ren.has_local and self.reduceop is not None and (opt.op in {OptOps.GROUP, OptOps.GROUPTOP} or \
                                         (self.group_for_reduces and opt.op not in {OptOps.NOLOCALS, OptOps.PADTO})):
         upcast_local_sz = prod([self.full_shape[a] for a in self.axes_of(AxisType.UPCAST, AxisType.WARP, AxisType.LOCAL, AxisType.GROUP_REDUCE)])
         smem_sz = amt*upcast_local_sz*self.reduceop.dtype.itemsize

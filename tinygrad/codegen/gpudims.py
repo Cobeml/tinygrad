@@ -64,9 +64,10 @@ def add_gpudims(ctx:Renderer, s:UOp):
   # get ranges
   all_ranges = {x.arg[0:-1]:x for x in s_topo if x.op is Ops.RANGE}
 
-  # extract global/local dims
+  # extract global/local dims (exclude GROUP_REDUCE from locals when has_local=False)
   global_dims = sorted(dedup([x.arg[0:-1] for x in all_ranges.values() if x.arg[-1] in (AxisType.GLOBAL, AxisType.THREAD)]))
-  local_dims = sorted(dedup([x.arg[0:-1] for x in all_ranges.values() if x.arg[-1] in (AxisType.WARP, AxisType.LOCAL, AxisType.GROUP_REDUCE)]))
+  local_types = (AxisType.WARP, AxisType.LOCAL, AxisType.GROUP_REDUCE) if ctx.has_local else (AxisType.WARP, AxisType.LOCAL)
+  local_dims = sorted(dedup([x.arg[0:-1] for x in all_ranges.values() if x.arg[-1] in local_types]))
   if not global_dims and not local_dims: return None
 
   # get global and local shape

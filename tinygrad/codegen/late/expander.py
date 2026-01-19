@@ -119,7 +119,10 @@ def fix_store_unroll(x:UOp):
   if len(store_expand) == 0: return None
   return UOp(Ops.CONTRACT, dtypes.void, (x.replace(src=x.src[:2]+tuple(store_range)),), tuple(flatten(x.arg for x in store_expand)), tag=1)
 
-def fix_group_for_reduce(x:UOp):
+def fix_group_for_reduce(ctx, x:UOp):
+  # Skip for devices without local memory - GROUP_REDUCE becomes nested REDUCE loop
+  if ctx is None or not ctx.has_local: return None
+
   reduce_gfr, reduce_r = partition(x.src[1:], lambda u: u.op is Ops.RANGE and u.arg[1] == AxisType.GROUP_REDUCE)
   if len(reduce_gfr) == 0: return None
 
