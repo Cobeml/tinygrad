@@ -6,7 +6,7 @@ from tinygrad.renderer.cstyle import AMDHIPRenderer, create_non_native_float_pat
 from tinygrad.uop.decompositions import xexp2, xlog2
 from tinygrad.uop.ops import UOp, PatternMatcher, UPat, Ops, GroupOp, range_str
 from tinygrad.dtype import dtypes, float_to_fp8, DType, PtrDType, truncate
-from tinygrad.helpers import prod, AMX, CI, OSX
+from tinygrad.helpers import prod, AMX, CI, CPU_COUNT, OSX, getenv
 
 def ldt(dt:DType):
   if dt.vcount > 1: return f"<{dt.vcount} x {ldt(dt.scalar())}>"
@@ -137,7 +137,8 @@ class LLVMRenderer(Renderer):
   abi = 'win64cc' if sys.platform == 'win32' else None
   supports_float4 = True
   has_local = False
-  global_max: tuple[int, ...] | None = None
+  has_threads = bool(getenv("THREADS", 1))
+  global_max: tuple[int, ...] | None = (CPU_COUNT.value, 0, 0) if has_threads else None
   string_rewrite = base_rewrite + PatternMatcher([(UPat(Ops.WMMA, name="wmma"), render_wmma_amx)])
   code_for_op = {Ops.FDIV: lambda: None, Ops.CMPLT: lambda: None}
   if AMX: tensor_cores = tc.amx
@@ -153,6 +154,7 @@ class LLVMRenderer(Renderer):
   def _render_fn(self, name:str, args:list[tuple[str,DType]], kernel:list[str], prefix:list[str]|None=None) -> str:
     # NOTE: CPUAllocator promises 0x20 alignment
     sargs = ", ".join([f"{ldt(dt)}{' noalias align 32' if isinstance(dt, PtrDType) else ''} {name}" for name,dt in args])
+    if self.has_threads: sargs += (", " if sargs else "") + "i32 %core_id"  # ADD THIS
     return "\n".join((prefix or []) + [f"define{' ' + self.abi if self.abi else ''} void @{name}({sargs}) #0", "{"] + kernel + ["  ret void\n}"])
   def _render_kernel(self, uops: list[UOp], prefix:list[str]|None=None) -> tuple[tuple[str, ...], str]:
     r: dict[UOp, str] = {}
@@ -191,6 +193,9 @@ class LLVMRenderer(Renderer):
         else:
           local_args.append(f"@{r[u][1:]} = internal unnamed_addr addrspace(3) global [{u.dtype.size} x {ldt(u.dtype)}] undef, align 16")
           kernel.append(f"  {r[u]} = addrspacecast [{u.dtype.size} x {ldt(u.dtype)}] addrspace(3)* @{r[u][1:]} to [{u.dtype.size} x {ldt(u.dtype)}]*")
+      elif u.op is Ops.SPECIAL:
+        r[u] = "%core_id"
+        continue
       elif u.op is Ops.CONST: r[u] = lconst(u.arg, u.dtype)
       elif u.op is Ops.CAST and (ldt(u.dtype) == ldt(u.src[0].dtype) or isinstance(u.dtype, PtrDType)):
         r[u] = r[u.src[0]] # cast from signed to unsigned of the same size is a noop, or pointer cast
