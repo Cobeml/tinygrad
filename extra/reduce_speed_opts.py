@@ -43,10 +43,18 @@ def test_opts(opts_list, name="custom"):
   print(f"{name:20s} | best: {best*1e6:8.2f} µs | opts: {prg.applied_opts}")
   return best
 
-print("=" * 80)
-baseline = test_opts((), "no opts (baseline)")
+# print("=" * 80)
+# baseline = test_opts((), "no opts (baseline)")
+
+# test_opts([Opt(OptOps.UPCAST, 0, 8)], "UP8")
+
+# test_opts([Opt(OptOps.UNROLL, 0, 8)], "UNROLL8")
 
 test_opts([Opt(OptOps.UPCAST, 0, 8), Opt(OptOps.UNROLL, 0, 8)], "UP8 + UNROLL8")
+
+# test_opts([Opt(OptOps.UPCAST, 0, 8), Opt(OptOps.GROUP, 0, 8), Opt(OptOps.UNROLL, 0, 4), Opt(OptOps.UNROLL, 1, 4)], "UP8 + GROUP8 + UNROLL4 + UNROLL4")
+
+# test_opts([Opt(OptOps.UPCAST, 0, 8), Opt(OptOps.UNROLL, 0, 4), Opt(OptOps.GROUP, 0, 8)], "UP8 + UNROLL8 + GROUP8")
 
 # print("\n--- GROUP only ---")
 # test_opts([Opt(OptOps.GROUPTOP, 0, 16)], "GROUPTOP16")
@@ -56,8 +64,7 @@ test_opts([Opt(OptOps.UPCAST, 0, 8), Opt(OptOps.UNROLL, 0, 8)], "UP8 + UNROLL8")
 # test_opts([Opt(OptOps.GROUPTOP, 0, 16), Opt(OptOps.UPCAST, 0, 4)], "GROUPTOP16 + UP4")
 # test_opts([Opt(OptOps.GROUPTOP, 0, 32), Opt(OptOps.UNROLL, 0, 4)], "GROUPTOP32 + UNROLL4")
 
-print("\n--- BEAM/default ---")
-beam_time = test_opts(None, "BEAM/default")
+# beam_time = test_opts(None, "BEAM/default")
 
-print("=" * 80)
-print(f"Baseline: {baseline*1e6:.2f} µs | BEAM: {beam_time*1e6:.2f} µs | speedup: {baseline/beam_time:.2f}x")
+# print("=" * 80)
+# print(f"Baseline: {baseline*1e6:.2f} µs | BEAM: {beam_time*1e6:.2f} µs | speedup: {baseline/beam_time:.2f}x")
