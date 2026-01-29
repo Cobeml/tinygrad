@@ -96,13 +96,29 @@ class VLIWRenderer(Renderer):
     print(f"rendering with {len(uops)} uops")
     reg, inst = 0, []
     r: dict[UOp, int] = {}
+
+    dead_uops: list[UOp] = []
+
+    num_inst: dict[UOp, int] = {}
+    for u in uops:
+      for s in u.src:
+        if s not in num_inst:
+          num_inst[s] = 0
+        num_inst[s] += 1
+
     for u in uops:
       assert u.dtype.count in (1,8), "dtype count must be 1 or 8"
 
       # dumb register allocator
       if u.op not in {Ops.STORE, Ops.SINK, Ops.GEP}:
-        r[u] = reg
-        reg += u.dtype.count
+        for du in dead_uops:
+          if u.dtype.count == du.dtype.count:
+            dead_uops.remove(du)
+            r[u] = r[du]
+            break
+        if u not in r:
+          r[u] = reg
+          reg += u.dtype.count
 
       # render UOps to instructions
       match u.op:
@@ -137,6 +153,12 @@ class VLIWRenderer(Renderer):
           inst.append({cat: [(self.code_for_op[u.op], r[u], r[u.src[0]], r[u.src[1]])]})
         case _:
           raise NotImplementedError(f"unhandled op {u.op}")
+      
+    for s in u.src:
+      num_inst[s] -= 1
+      if num_inst[s] == 0:
+        dead_uops.append(s)
+
     return repr(inst)
 
 # ************************* test and render *************************
