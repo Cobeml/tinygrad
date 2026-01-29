@@ -119,10 +119,11 @@ class VLIWRenderer(Renderer):
         if u not in r:
           r[u] = reg
           reg += u.dtype.count
-        for s in u.src:
-          num_inst[s] -= 1
-          if num_inst[s] == 0:
-            dead_uops.append(s)
+          
+      for s in u.src:
+        num_inst[s] -= 1
+        if num_inst[s] == 0 and s.op != Ops.GEP:
+          dead_uops.append(s)
 
       # render UOps to instructions
       match u.op:
