@@ -87,24 +87,29 @@ class VLIWRenderer(Renderer):
   pre_matcher = vliw_prepare
 
   def render(self, uops:list[UOp]):
-
-    # TODO: this is a minimal renderer. for low cycle count, make it good
-    # to get speed, you need to add VLIW packing
-    # to get under 1536 regs, you need to add a register allocator
-    # we left the fun parts to you
-
     print(f"rendering with {len(uops)} uops")
-    reg, inst = 0, []
+    reg, insts = 0, []
     r: dict[UOp, int] = {}
-    num_inst: dict[UOp, int] = {}
+    num_deps: dict[UOp, int] = {}
     dead_uops: list[UOp] = []
+    # almost_dead_uops: list[UOp] = []
+    SLOT_LIMITS = problem.SLOT_LIMITS
+    cycle = {k: [] for k in SLOT_LIMITS.keys()}
+    uops_in_cycle: list[UOp] = []
 
+    def get_base(u: UOp) -> UOp:
+      while u.op == Ops.GEP:
+        u = u.src[0]
+      return u
+
+    # calculate usage counts of uops
     for u in uops:
+      if u.op == Ops.GEP: continue
       for s in u.src:
-        if s not in num_inst:
-          num_inst[s] = 0
-        if s.op not in {Ops.STORE, Ops.SINK, Ops.GEP}:
-          num_inst[s] += 1
+        base = get_base(s)
+        if base not in num_deps:
+          num_deps[base] = 0
+        num_deps[base] += 1
 
     for u in uops:
       assert u.dtype.count in (1,8), "dtype count must be 1 or 8"
@@ -119,47 +124,81 @@ class VLIWRenderer(Renderer):
         if u not in r:
           r[u] = reg
           reg += u.dtype.count
-          
-      for s in u.src:
-        num_inst[s] -= 1
-        if num_inst[s] == 0 and s.op != Ops.GEP:
-          dead_uops.append(s)
+
+      pending_insts = []
 
       # render UOps to instructions
       match u.op:
         case Ops.SINK:
-          inst.append({"flow": [("halt",)]})
+          pending_insts.append(("flow", ("halt",)))
         case Ops.CONST:
-          inst.append({"load": [("const", r[u], u.arg)]})
+          pending_insts.append(("load", ("const", r[u], u.arg)))
+          if u.arg > max(r.values()) or u.arg < min(r.values()):
+            print(max(r.values()))
+            print(min(r.values()))
+            print(f"const {u.op} {r[u]} {u.arg}")
+            print(f"cycle: {cycle}")
+            try:
+              print(f"last cycle: {insts[-1]}")
+            except IndexError:
+              print("no last cycle")
         case Ops.GEP:
           # a GEP is just an alias to a special register in the vector
           r[u] = r[u.src[0]] + u.arg[0]
+          continue
         case Ops.VECTORIZE:
           if all(s == u.src[0] for s in u.src):
             # if all sources are the same, we can broadcast
-            inst.append({"valu": [("vbroadcast", r[u], r[u.src[0]])]})
+            pending_insts.append(("valu", ("vbroadcast", r[u], r[u.src[0]])))
           else:
             # this is a copy into a contiguous chunk of registers
-            inst.extend({"flow": [("add_imm", r[u]+i, r[s], 0)]} for i,s in enumerate(u.src) if r[s] != r[u]+i)
+            pending_insts.extend(("flow", ("add_imm", r[u]+i, r[s], 0)) for i,s in enumerate(u.src) if r[s] != r[u]+i)
         case Ops.LOAD:
           op = "vload" if u.dtype.count > 1 else "load"
-          inst.append({"load": [(op, r[u], r[u.src[0]])]})
+          pending_insts.append(("load", (op, r[u], r[u.src[0]])))
+          if r[u.src[0]] > max(r.values()) or r[u.src[0]] < min(r.values()):
+            print(max(r.values()))
+            print(min(r.values()))
+            print(f"load {u.op} {r[u]} {r[u.src[0]]}")
+            print(f"cycle: {cycle}")
+            print(f"last cycle: {insts[-1]}")
         case Ops.STORE:
           op = "vstore" if u.src[1].dtype.count > 1 else "store"
-          inst.append({"store": [(op, r[u.src[0]], r[u.src[1]])]})
+          pending_insts.append(("store", (op, r[u.src[0]], r[u.src[1]])))
         case Ops.MULACC:
           assert u.dtype.count == 8
-          inst.append({"valu": [("multiply_add", r[u], r[u.src[0]], r[u.src[1]], r[u.src[2]])]})
+          pending_insts.append(("valu", ("multiply_add", r[u], r[u.src[0]], r[u.src[1]], r[u.src[2]])))
         case Ops.WHERE:
           assert u.dtype.count == 8
-          inst.append({"flow": [("vselect", r[u], r[u.src[0]], r[u.src[1]], r[u.src[2]])]})
+          pending_insts.append(("flow", ("vselect", r[u], r[u.src[0]], r[u.src[1]], r[u.src[2]])))
         case _ if u.op in self.code_for_op:
           cat = "valu" if u.dtype.count > 1 else "alu"
-          inst.append({cat: [(self.code_for_op[u.op], r[u], r[u.src[0]], r[u.src[1]])]})
+          pending_insts.append((cat, (self.code_for_op[u.op], r[u], r[u.src[0]], r[u.src[1]])))
         case _:
           raise NotImplementedError(f"unhandled op {u.op}")
 
-    return repr(inst)
+      # check slot limits and update cycle and insts
+      for action, inst in pending_insts:
+        if len(cycle[action]) >= SLOT_LIMITS[action] or any(src in uops_in_cycle for src in u.src):
+          # dead_uops.extend(almost_dead_uops)
+          # almost_dead_uops.clear()
+          uops_in_cycle.clear()
+          insts.append(cycle)
+          cycle = {k: [] for k in SLOT_LIMITS.keys()}
+        cycle[action].append(inst)
+        uops_in_cycle.append(u)
+      
+      # assess liveliness of uop
+      for s in u.src:
+        base = get_base(s)
+        num_deps[base] -= 1
+        if num_deps[base] == 0 and base.op not in {Ops.STORE, Ops.SINK}:
+          dead_uops.append(base)
+
+    if any(len(ops) > 0 for ops in cycle.values()):
+      insts.append(cycle)
+
+    return repr(insts)
 
 # ************************* test and render *************************
 
