@@ -92,7 +92,6 @@ class VLIWRenderer(Renderer):
     r: dict[UOp, int] = {}
     num_deps: dict[UOp, int] = {}
     dead_uops: list[UOp] = []
-    # almost_dead_uops: list[UOp] = []
     SLOT_LIMITS = problem.SLOT_LIMITS
     cycle = {k: [] for k in SLOT_LIMITS.keys()}
     uops_in_cycle: list[UOp] = []
@@ -133,15 +132,6 @@ class VLIWRenderer(Renderer):
           pending_insts.append(("flow", ("halt",)))
         case Ops.CONST:
           pending_insts.append(("load", ("const", r[u], u.arg)))
-          if u.arg > max(r.values()) or u.arg < min(r.values()):
-            print(max(r.values()))
-            print(min(r.values()))
-            print(f"const {u.op} {r[u]} {u.arg}")
-            print(f"cycle: {cycle}")
-            try:
-              print(f"last cycle: {insts[-1]}")
-            except IndexError:
-              print("no last cycle")
         case Ops.GEP:
           # a GEP is just an alias to a special register in the vector
           r[u] = r[u.src[0]] + u.arg[0]
@@ -156,12 +146,6 @@ class VLIWRenderer(Renderer):
         case Ops.LOAD:
           op = "vload" if u.dtype.count > 1 else "load"
           pending_insts.append(("load", (op, r[u], r[u.src[0]])))
-          if r[u.src[0]] > max(r.values()) or r[u.src[0]] < min(r.values()):
-            print(max(r.values()))
-            print(min(r.values()))
-            print(f"load {u.op} {r[u]} {r[u.src[0]]}")
-            print(f"cycle: {cycle}")
-            print(f"last cycle: {insts[-1]}")
         case Ops.STORE:
           op = "vstore" if u.src[1].dtype.count > 1 else "store"
           pending_insts.append(("store", (op, r[u.src[0]], r[u.src[1]])))
@@ -179,9 +163,7 @@ class VLIWRenderer(Renderer):
 
       # check slot limits and update cycle and insts
       for action, inst in pending_insts:
-        if len(cycle[action]) >= SLOT_LIMITS[action] or any(src in uops_in_cycle for src in u.src):
-          # dead_uops.extend(almost_dead_uops)
-          # almost_dead_uops.clear()
+        if len(cycle[action]) >= SLOT_LIMITS[action] or any(get_base(src) in uops_in_cycle for src in u.src):
           uops_in_cycle.clear()
           insts.append(cycle)
           cycle = {k: [] for k in SLOT_LIMITS.keys()}
